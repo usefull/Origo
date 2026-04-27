@@ -7,12 +7,17 @@ FROM ubuntu:22.04 AS builder
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
+    git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Копируем ВСЕ исходники сначала (или копируем правильно)
-COPY . .
+# Копируем CMakeLists.txt
+COPY CMakeLists.txt .
+
+# Создаем src директорию и копируем исходники
+COPY src/ ./src/
 
 # Создаём директорию для сборки и запускаем cmake
 RUN mkdir -p release && \
@@ -38,8 +43,12 @@ WORKDIR /app
 # Копируем собранный бинарник из builder
 COPY --from=builder /build/release/origo .
 
-# Меняем владельца
-RUN chown origo:origo /app/origo
+# Меняем владельца и делаем исполняемым
+RUN chown origo:origo /app/origo && \
+    chmod +x /app/origo
+
+# Открываем порт для HTTP сервера
+EXPOSE 8080
 
 # Переключаемся на непривилегированного пользователя
 USER origo
