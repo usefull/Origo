@@ -6,17 +6,18 @@ namespace epr = restinio::router::easy_parser_router;
 
 namespace origo {
 
-    class StubHandler : public IHandler {
+    class StubHandler : public IHandler<StubHandler> {
     public:
-        void Register(restinio::router::easy_parser_router_t* rawRouter) override {
-            rawRouter->http_get(
+        static void RegisterRoutes(DI& di, restinio::router::easy_parser_router_t& router) {
+            router.http_get(
                 epr::path_to_params(
                     "/api/",
                     epr::non_negative_decimal_number_p<std::uint64_t>(),
                     "/www/",
                     epr::path_fragment_p()
                 ),
-                [](const auto& req, std::uint64_t id, const std::string& title) {                    
+                [&di](const auto& req, std::uint64_t id, const std::string& title) {
+                    auto const handler = getHandler(di);                 
                     return req->create_response()
                         .set_body(fmt::format("id: {}, www: {}", id, title))
                         .done();

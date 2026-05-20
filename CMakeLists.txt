@@ -99,6 +99,7 @@ target_include_directories(restinio_deps INTERFACE
 target_link_libraries(restinio_deps INTERFACE llhttp fmt pthread)
 
 add_executable(${PROJECT_NAME}
+    src/ini_di.cpp
     src/main.cpp
 )
 
