@@ -53,17 +53,18 @@ namespace origo {
                 server
             };
 
-            static volatile sig_atomic_t stop_flag = 0;
-            signal(SIGINT, [](int) { stop_flag = 1; });
-            signal(SIGTERM, [](int) { stop_flag = 1; });
+            s_stop_flag.store(false);
+            std::signal(SIGINT, signal_handler);
+            std::signal(SIGTERM, signal_handler);
 
             runner.start();
 
             std::cout << fmt::format(mess::StartPrompt, MODE, getConfig()->port) << std::endl;
             std::cout << mess::CtrlC << std::endl;
-            while(!stop_flag)
+            
             {
-                this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::unique_lock<std::mutex> lock(s_mutex);
+                s_cv.wait(lock, [] { return s_stop_flag.load(); });
             }
 
             std::cout << mess::StopSigRecivied << std::endl;
@@ -77,7 +78,16 @@ namespace origo {
     private:
         std::shared_ptr<origo::Config> getConfig() { return di.resolve<origo::Config>(); }
 
+        static void signal_handler(int) {
+            s_stop_flag.store(true);
+            s_cv.notify_one();
+        }
+
         DI di;
         std::unique_ptr<restinio::router::easy_parser_router_t> router;
+
+        static inline std::atomic<bool> s_stop_flag{false};
+        static inline std::condition_variable s_cv;
+        static inline std::mutex s_mutex;
     };
 }
