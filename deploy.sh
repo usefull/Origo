@@ -1,13 +1,29 @@
 # ============================================
 # КОНФИГУРАЦИЯ - ДЛЯ ВАШЕГО VPS
 # ============================================
-VPS_HOST="xxx.xxx.xxx.xxx"      # Ваш VPS
-VPS_USER="xxx"                 # Пользователь на VPS
+VPS_HOST="194.48.143.99"      # Ваш VPS
+VPS_USER="root"                 # Пользователь на VPS
 VPS_PORT="22"                   # SSH порт (стандартный)
 PROJECT_NAME="origo"            # Имя проекта
 REMOTE_PATH="/opt/origo"        # Путь на VPS
 IMAGE_NAME="origo-app"          # Имя Docker образа
 CONTAINER_NAME="origo"          # Имя контейнера
+
+# Читаем порт из конфига
+CONFIG_FILE="origo.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    # Ищем строку с "port" и извлекаем число
+    PORT=$(grep -o '"port"[[:space:]]*:[[:space:]]*[0-9]*' "$CONFIG_FILE" | grep -o '[0-9]*$')
+    if [ -z "$PORT" ]; then
+        echo "⚠️  Не удалось прочитать порт из конфига, используем 8080"
+        PORT=8080
+    else
+        echo "📡 Найден порт в конфиге: $PORT"
+    fi
+else
+    echo "⚠️  Файл конфигурации не найден, используем порт 8080"
+    PORT=8080
+fi
 
 # ============================================
 # ЦВЕТА ДЛЯ ВЫВОДА
@@ -144,6 +160,7 @@ ssh -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} << ENDSSH
     docker run -d \
         --name ${CONTAINER_NAME} \
         --restart unless-stopped \
+        -p ${PORT}:${PORT} \
         ${IMAGE_NAME}:latest
     
     echo "    → Очистка старых образов..."

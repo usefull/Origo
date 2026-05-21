@@ -6,7 +6,6 @@ build/
 *.out
 
 # VS Code
-.vscode/
 .history/
 
 # Docker

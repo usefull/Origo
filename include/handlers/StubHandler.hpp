@@ -16,13 +16,15 @@ namespace origo {
                     "/www/",
                     epr::path_fragment_p()
                 ),
-                [&di](const auto& req, std::uint64_t id, const std::string& title) {
-                    auto const handler = getHandler(di);                 
-                    return req->create_response()
-                        .set_body(fmt::format("id: {}, www: {}", id, title))
-                        .done();
-                }
+                [&di](const auto& req, std::uint64_t id, const std::string& title) { return getHandler(di)->test(req, id, title); }
             );
+        }
+
+        restinio::request_handling_status_t test(const std::shared_ptr<restinio::generic_request_t<restinio::no_extra_data_factory_t::data_t>>& req, std::uint64_t id, const std::string& title) {
+            std::cout << "StubHandler.test" << std::endl;
+            return req->create_response()
+                .set_body(fmt::format("id: {} title: {}", id, title))
+                .done();
         }
     };
 }

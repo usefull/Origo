@@ -7,16 +7,16 @@
 
 namespace origo {
 
-    template<typename THandler>
+    template<typename THandler, typename... Deps>
     class IHandler {
     public:
         static void Register(DI& di, restinio::router::easy_parser_router_t& router){
-            di.registerType<THandler>();
+            di.registerType<THandler, Deps...>();
             THandler::RegisterRoutes(di, router);
         };
 
     protected:
-        static shared_ptr<THandler> getHandler(DI& di) {
+        static std::shared_ptr<THandler> getHandler(DI& di) {
             auto r = di.resolve<THandler>();
             return r;
         }

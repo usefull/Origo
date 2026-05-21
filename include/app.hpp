@@ -7,6 +7,7 @@
 #include "di.hpp"
 #include "./handlers/TestHandler.hpp"
 #include "./handlers/StubHandler.hpp"
+#include "./config.hpp"
 
 #ifdef NDEBUG
     #define MODE "Release"
