@@ -10,6 +10,7 @@ namespace origo::ErrorMessages
     inline constexpr string_view ConfigFileReadingError = "Configuration file reading error: {}";
     inline constexpr string_view CantReadIpFromConfig = "Unable to read IP-address from configuration file  (field \"ip\"):  {}";
     inline constexpr string_view CantReadPortFromConfig = "Unable to read port number from configuration file  (field \"port\"):  {}";
+    inline constexpr string_view CantReadStaticDirsFromConfig = "Unable to read static files directory list from configuration file  (field \"staticDirs\"):  {}";
 }
 
 namespace origo::InfoMessages

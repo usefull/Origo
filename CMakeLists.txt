@@ -103,6 +103,15 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
 )
 
+# Подключаем функцию копирования
+include(copy_static_dirs.cmake)
+
+# Копируем статические директории из конфига
+copy_static_dirs_from_config(
+    ${CMAKE_CURRENT_SOURCE_DIR}/origo.conf
+    ${PROJECT_NAME}
+)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE restinio_deps nlohmann_json::nlohmann_json)
 
 message(STATUS "✅ RESTinio configured")

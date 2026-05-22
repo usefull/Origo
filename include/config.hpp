@@ -16,6 +16,7 @@ namespace origo
     struct Config {
         string ip;
         uint port;
+        unordered_map<string, std::filesystem::path> staticDirs;
 
         json to_json() const {
             return {{"ip", ip}, {"port", port}};
@@ -42,6 +43,30 @@ namespace origo
             {
                 throw runtime_error(fmt::format(err::CantReadPortFromConfig, e.what()));
             }
+
+            try {
+                // Узнаём пут к папке исполняемого файла.
+                char buffer[PATH_MAX];
+                auto len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+                buffer[len] = '\0';
+                std::filesystem::path exePath(buffer);
+                std::filesystem::path exeDir = exePath.parent_path();
+
+                // В поле staticDirs пишем полные пути к папкам со статическими файлами из конфига.
+                auto itStaticDirs = j.find("staticDirs");
+                if (itStaticDirs != j.end()) {
+                    for (auto& [key, value] : itStaticDirs.value().items()) {
+                        if (value.is_string())
+                            config.staticDirs.insert({ key, exeDir / value.get<std::string>() });
+                        else
+                            config.staticDirs.insert({ key, exeDir / key });
+                    }
+                }
+            }
+            catch (const exception& e) {
+                throw runtime_error(fmt::format(err::CantReadStaticDirsFromConfig, e.what()));
+            }
+
             return config;
         }
 
@@ -56,7 +81,7 @@ namespace origo
             json jsonConfig;
             try
             {
-                file >> jsonConfig;
+                jsonConfig = json::parse(file, nullptr, true, true);
             }
             catch (const json::parse_error& e)
             {

@@ -7,6 +7,7 @@
 #include "di.hpp"
 #include "./handlers/TestHandler.hpp"
 #include "./handlers/StubHandler.hpp"
+#include "./handlers/StaticFilesHandler.hpp"
 #include "./config.hpp"
 
 #ifdef NDEBUG
@@ -29,8 +30,19 @@ namespace origo {
             di(configPath),
             router(std::make_unique<restinio::router::easy_parser_router_t>())
         {
+            // Регистрируем кастомные обработчики запросов
             TestHandler::Register(di, *router);
             StubHandler::Register(di, *router);
+
+            // Обработчик статических файлов
+            StaticFilesHandler::Register(di, *router);
+
+            // Обработчик прочих роутов
+            router->non_matched_request_handler([](const auto& req) { 
+                return req->create_response(restinio::status_not_found())
+                    //.set_body("Not found")
+                    .done();
+            });
         }
 
         void start() {
