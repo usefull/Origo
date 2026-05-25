@@ -16,11 +16,12 @@ namespace origo {
             for (const auto& [virtualDir, realDir] : config->staticDirs) {
                 router.http_get(
                     epr::path_to_params(
-                        fmt::format("/{}/", virtualDir),
+                        fmt::format("/{}", virtualDir),
                         tail_path_p()
                     ),
                     [&di, realDir](const auto& req, std::string pathTail) { return getHandler(di)->handle(req, realDir, pathTail); }
                 );
+                
             }
         }
 
@@ -29,7 +30,7 @@ namespace origo {
             std::filesystem::path realDir,std::string pathTail)
         {
             auto filePath = realDir / pathTail;
-            if (!std::filesystem::exists(filePath)) {
+            if (!std::filesystem::is_regular_file(filePath)) {
                 return req->create_response(restinio::status_not_found())
                         .done();
             }

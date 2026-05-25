@@ -5,6 +5,7 @@
 
 #include "messages.hpp"
 #include "di.hpp"
+#include "./handlers/CorsHandler.hpp"
 #include "./handlers/TestHandler.hpp"
 #include "./handlers/StubHandler.hpp"
 #include "./handlers/StaticFilesHandler.hpp"
@@ -31,6 +32,7 @@ namespace origo {
             router(std::make_unique<restinio::router::easy_parser_router_t>())
         {
             // Регистрируем кастомные обработчики запросов
+            CorsHandler::Register(di, *router);
             TestHandler::Register(di, *router);
             StubHandler::Register(di, *router);
 
