@@ -8,8 +8,8 @@
 #include "./handlers/CorsHandler.hpp"
 #include "./handlers/TestHandler.hpp"
 #include "./handlers/StubHandler.hpp"
-#include "./handlers/StaticFilesHandler.hpp"
 #include "./config.hpp"
+#include "./get_mime_type.hpp"
 
 #ifdef NDEBUG
     #define MODE "Release"
@@ -22,7 +22,8 @@ namespace mess = origo::InfoMessages;
 namespace origo {
  //
     struct my_traits : public restinio::default_traits_t {
-        using request_handler_t = restinio::router::easy_parser_router_t;
+        //using request_handler_t = std::function<restinio::request_handling_status_t(restinio::request_handle_t)>;
+        using request_handler_t = std::function<restinio::request_handling_status_t(restinio::request_handle_t)>;
     };
 
     class App {
@@ -36,14 +37,9 @@ namespace origo {
             TestHandler::Register(di, *router);
             StubHandler::Register(di, *router);
 
-            // Обработчик статических файлов
-            StaticFilesHandler::Register(di, *router);
-
             // Обработчик прочих роутов
             router->non_matched_request_handler([](const auto& req) { 
-                return req->create_response(restinio::status_not_found())
-                    //.set_body("Not found")
-                    .done();
+                return req->create_response(restinio::status_not_found()).done();
             });
         }
 
@@ -55,7 +51,9 @@ namespace origo {
                 restinio::server_settings_t<my_traits>{}
                     .address(getConfig()->ip)
                     .port(getConfig()->port)
-                    .request_handler(std::move(router))
+                    .request_handler([this](auto req) { 
+                        return this->main_handler(std::move(req)); 
+                    })
             };
 
             const auto cores = std::thread::hardware_concurrency();
@@ -90,6 +88,40 @@ namespace origo {
         }
 
     private:
+        restinio::request_handling_status_t main_handler(restinio::request_handle_t req) {
+            auto config = di.resolve<Config>();
+            const auto url = req->header().path();
+            const auto second_slash_pos = url.find('/', 1);    
+            auto virtualDir = (second_slash_pos == std::string_view::npos)
+                ? url.substr(1)
+                : url.substr(1, second_slash_pos - 1);
+            auto tailPath = (second_slash_pos == std::string_view::npos)
+                ? ""
+                : url.substr(second_slash_pos + 1);
+
+            auto it = config->staticDirs.find(std::string(virtualDir));
+            if (it != config->staticDirs.end()) {
+                auto filePath = it->second / (tailPath == "" ? "index.html" : tailPath);
+                if (!std::filesystem::is_regular_file(filePath)) {
+                    return req->create_response(restinio::status_not_found()).done();
+                }
+                return req->create_response()
+                    .append_header(restinio::http_field::content_type, std::string{get_mime_type(filePath)})
+                    .set_body(restinio::sendfile(filePath.string()))
+                    .done();
+            }
+
+            if (url == "/app" || url.find("/app/") == 0) {
+                
+                return req->create_response()
+                    .append_header(restinio::http_field::content_type, "text/plain; charset=utf-8")
+                    .set_body("Перехвачено методом класса! Путь: " + std::string(url))
+                    .done();
+            }
+
+            return (*router)(req);
+        }
+
         std::shared_ptr<origo::Config> getConfig() { return di.resolve<origo::Config>(); }
 
         static void signal_handler(int) {
