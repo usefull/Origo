@@ -21,8 +21,28 @@
 namespace mess = origo::InfoMessages;
 
 namespace origo {
+
+    class my_connection_listener_t {
+    public:
+        // Передаем ссылку на вашу радиостанцию
+        my_connection_listener_t(RadioStation& station) : m_station(station) {}
+
+        // Этот метод Обязательно должен называться state_changed и быть noexcept
+        void state_changed(const restinio::connection_state::notice_t& notice) noexcept {
+            // Проверяем, что событие — это закрытие сокета (смерть клиента)
+            if (std::holds_alternative<restinio::connection_state::closed_t>(notice.cause())) {
+                // Вызываем удаление из std::map по ID соединения
+                m_station.remove_client(notice.connection_id());
+            }
+        }
+
+    private:
+        RadioStation& m_station;
+    };
+
     struct my_traits : public restinio::default_traits_t {
         using request_handler_t = std::function<restinio::request_handling_status_t(restinio::request_handle_t)>;
+        using connection_state_listener_t = my_connection_listener_t;
     };
 
     class App {
@@ -59,6 +79,7 @@ namespace origo {
                 restinio::server_settings_t<my_traits>{}
                     .address(getConfig()->ip)
                     .port(getConfig()->port)
+                    .connection_state_listener(std::make_shared<my_connection_listener_t>(*radio_station))
                     .socket_options_setter([](auto & options) {
                         options.set_option(asio::ip::tcp::no_delay{true});
                     })
@@ -110,6 +131,9 @@ namespace origo {
 
             // Перехватываем специальную точку входа для радио
             if (url == "/radio") {
+                // Получаем ID текущего сетевого соединения сокета
+                const auto conn_id = req->connection_id();
+
                 // Создаем ответ с поддержкой Chunked Transfer Encoding
                 auto response = std::make_shared<RadioStation::response_t>(
                     req->create_response<restinio::chunked_output_t>()
@@ -123,8 +147,8 @@ namespace origo {
                 // Отправляем заголовки (клиент начнет ожидать данные)
                 response->flush();
 
-                // Регистрируем клиента в вещателе
-                radio_station->add_client(response);
+                // Регистрируем клиента в вещателе вместе с его ID соединения
+                radio_station->add_client(conn_id, response);
 
                 // Говорим RESTinio, что запрос обработан, но не завершен (holding)
                 return restinio::request_handling_status_t::accepted;

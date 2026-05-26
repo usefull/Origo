@@ -15,6 +15,7 @@ namespace origo {
     public:
         using response_t = restinio::response_builder_t<restinio::chunked_output_t>;
         using client_ptr_t = std::shared_ptr<response_t>;
+        using client_map_t = std::map<restinio::connection_id_t, client_ptr_t>;
 
         RadioStation(std::filesystem::path music_dir) 
             : m_music_dir(std::move(music_dir)), m_running(false) {}
@@ -22,9 +23,17 @@ namespace origo {
         ~RadioStation() { stop(); }
 
         // Добавление слушателя
-        void add_client(client_ptr_t client) {
+        void add_client(restinio::connection_id_t id, client_ptr_t client) {
             std::lock_guard<std::mutex> lock(m_clients_mutex);
-            m_clients.push_back(client);
+            m_clients[id] = std::move(client);
+            std::cout << "[Radio] Client added. Total current: " << m_clients.size() << std::endl;
+        }
+
+        void remove_client(restinio::connection_id_t id) {
+            std::lock_guard<std::mutex> lock(m_clients_mutex);
+            if (m_clients.erase(id) > 0) {
+                std::cout << "[Radio] Client disconnected. Total remaining: " << m_clients.size() << std::endl;
+            }
         }
 
         void start() {
@@ -154,17 +163,11 @@ namespace origo {
         void send_chunk_to_all(const char* data, size_t size) {
             std::lock_guard<std::mutex> lock(m_clients_mutex);
             
-            for (auto it = m_clients.begin(); it != m_clients.end();) {
-                try {
-                    // Отправляем чанк данных клиенту
-                    (*it)->append_chunk(restinio::string_view_t{data, size});
-                    (*it)->flush();
-                    ++it;
-                }
-                catch (const std::exception&) {
-                    // Если клиент отключился, удаляем его из списка вещания
-                    it = m_clients.erase(it);
-                }
+            for (auto& [id, client] : m_clients) {
+                // Мы полностью убираем try-catch отсюда.
+                // Запись асинхронна и безопасна: если клиент ушел, лисенер его сотрет.
+                client->append_chunk(restinio::string_view_t{data, size});
+                client->flush(); 
             }
         }
 
@@ -172,7 +175,7 @@ namespace origo {
         std::atomic<bool> m_running;
         std::thread m_broadcaster_thread;
         
-        std::vector<client_ptr_t> m_clients;
+        client_map_t m_clients; 
         std::mutex m_clients_mutex;
 
         // Новые примитивы для синхронизации прерываний
