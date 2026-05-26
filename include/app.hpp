@@ -9,6 +9,7 @@
 #include "./handlers/TestHandler.hpp"
 #include "./handlers/StubHandler.hpp"
 #include "./config.hpp"
+#include "./RadioStation.hpp"
 #include "./get_mime_type.hpp"
 
 #ifdef NDEBUG
@@ -32,6 +33,8 @@ namespace origo {
             di(configPath),
             router(std::make_unique<restinio::router::easy_parser_router_t>())
         {
+            radio_station = std::make_unique<RadioStation>("mp3");
+
             // Регистрируем в роутере обработчик CORS
             CorsHandler::Register(di, *router);
 
@@ -48,12 +51,17 @@ namespace origo {
         /// @brief Метод запукает работу сервера
         void start() {
 
+            radio_station->start();
+
             restinio::http_server_t<my_traits> server
             {
                 restinio::own_io_context(),
                 restinio::server_settings_t<my_traits>{}
                     .address(getConfig()->ip)
                     .port(getConfig()->port)
+                    .socket_options_setter([](auto & options) {
+                        options.set_option(asio::ip::tcp::no_delay{true});
+                    })
                     .request_handler([this](auto req) { 
                         return this->root_handler(std::move(req)); 
                     })
@@ -86,6 +94,8 @@ namespace origo {
             
             runner.stop();
             runner.wait();
+
+            radio_station->stop();
             
             std::cout << mess::StoppedSuccessfully << std::endl;
         }
@@ -95,10 +105,32 @@ namespace origo {
         /// @brief Метод представляет корневой обработчик запросов
         /// @param req HTTP-запрос
         /// @return HTTP-статус
-        restinio::request_handling_status_t root_handler(restinio::request_handle_t req) {
+        restinio::request_handling_status_t root_handler(restinio::request_handle_t req) {            
+            const auto url = req->header().path();
+
+            // Перехватываем специальную точку входа для радио
+            if (url == "/radio") {
+                // Создаем ответ с поддержкой Chunked Transfer Encoding
+                auto response = std::make_shared<RadioStation::response_t>(
+                    req->create_response<restinio::chunked_output_t>()
+                );
+
+                // Задаем заголовки аудиопотока
+                response->connection_keep_alive();
+                response->append_header(restinio::http_field::content_type, "audio/mpeg");
+                response->append_header(restinio::http_field::cache_control, "no-cache, no-store");
+                
+                // Отправляем заголовки (клиент начнет ожидать данные)
+                response->flush();
+
+                // Регистрируем клиента в вещателе
+                radio_station->add_client(response);
+
+                // Говорим RESTinio, что запрос обработан, но не завершен (holding)
+                return restinio::request_handling_status_t::accepted;
+            }
 
             // Выделяем из запроса первый сегмент
-            const auto url = req->header().path();
             const auto second_slash_pos = url.find('/', 1);    
             auto virtualDir = (second_slash_pos == std::string_view::npos)
                 ? url.substr(1)
@@ -145,6 +177,7 @@ namespace origo {
 
         DI di;
         std::unique_ptr<restinio::router::easy_parser_router_t> router;
+        std::unique_ptr<RadioStation> radio_station;
 
         static inline std::atomic<bool> s_stop_flag{false};
         static inline std::condition_variable s_cv;
