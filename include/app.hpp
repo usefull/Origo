@@ -20,29 +20,32 @@
 namespace mess = origo::InfoMessages;
 
 namespace origo {
- //
     struct my_traits : public restinio::default_traits_t {
-        //using request_handler_t = std::function<restinio::request_handling_status_t(restinio::request_handle_t)>;
         using request_handler_t = std::function<restinio::request_handling_status_t(restinio::request_handle_t)>;
     };
 
     class App {
     public:
+        /// @brief Конструктор
+        /// @param configPath Путь к файлу конфигурации
         App(const char* configPath) :
             di(configPath),
             router(std::make_unique<restinio::router::easy_parser_router_t>())
         {
-            // Регистрируем кастомные обработчики запросов
+            // Регистрируем в роутере обработчик CORS
             CorsHandler::Register(di, *router);
+
+            // Регистрируем кастомные обработчики
             TestHandler::Register(di, *router);
             StubHandler::Register(di, *router);
 
-            // Обработчик прочих роутов
+            // Обработчик 404
             router->non_matched_request_handler([](const auto& req) { 
                 return req->create_response(restinio::status_not_found()).done();
             });
         }
-
+        
+        /// @brief Метод запукает работу сервера
         void start() {
 
             restinio::http_server_t<my_traits> server
@@ -52,7 +55,7 @@ namespace origo {
                     .address(getConfig()->ip)
                     .port(getConfig()->port)
                     .request_handler([this](auto req) { 
-                        return this->main_handler(std::move(req)); 
+                        return this->root_handler(std::move(req)); 
                     })
             };
 
@@ -88,40 +91,51 @@ namespace origo {
         }
 
     private:
-        restinio::request_handling_status_t main_handler(restinio::request_handle_t req) {
-            auto config = di.resolve<Config>();
+
+        /// @brief Метод представляет корневой обработчик запросов
+        /// @param req HTTP-запрос
+        /// @return HTTP-статус
+        restinio::request_handling_status_t root_handler(restinio::request_handle_t req) {
+
+            // Выделяем из запроса первый сегмент
             const auto url = req->header().path();
             const auto second_slash_pos = url.find('/', 1);    
             auto virtualDir = (second_slash_pos == std::string_view::npos)
                 ? url.substr(1)
                 : url.substr(1, second_slash_pos - 1);
+            
+            // Выделяем из запроса остаток пути после первого сегмента
             auto tailPath = (second_slash_pos == std::string_view::npos)
                 ? ""
                 : url.substr(second_slash_pos + 1);
 
+            // Пытаемся найти в конфигурации в staticDirs виртуальную папку,
+            // совпадающую с первым сегментом пути
+            auto config = di.resolve<Config>();
             auto it = config->staticDirs.find(std::string(virtualDir));
             if (it != config->staticDirs.end()) {
+                // Если найдено, формируем полный путь к запрашиваемому файлу,
+                // Если остаток пути из запроса пустой - подставляем index.html
                 auto filePath = it->second / (tailPath == "" ? "index.html" : tailPath);
+
+                // 404, если файла не существует
                 if (!std::filesystem::is_regular_file(filePath)) {
                     return req->create_response(restinio::status_not_found()).done();
                 }
+
+                // Возвращаем файл в ответе
                 return req->create_response()
                     .append_header(restinio::http_field::content_type, std::string{get_mime_type(filePath)})
                     .set_body(restinio::sendfile(filePath.string()))
                     .done();
             }
 
-            if (url == "/app" || url.find("/app/") == 0) {
-                
-                return req->create_response()
-                    .append_header(restinio::http_field::content_type, "text/plain; charset=utf-8")
-                    .set_body("Перехвачено методом класса! Путь: " + std::string(url))
-                    .done();
-            }
-
+            // Если виртуальнв=ая папка не найдена в конфигурации,
+            // передаём дальнейшую обработку запроса роутеру.
             return (*router)(req);
         }
 
+        /// @brief Метод получения конфигурационной информации
         std::shared_ptr<origo::Config> getConfig() { return di.resolve<origo::Config>(); }
 
         static void signal_handler(int) {
