@@ -8,6 +8,7 @@
 #include <fstream>
 #include <filesystem>
 #include <chrono>
+#include <set>
 
 namespace origo {
 
@@ -23,16 +24,36 @@ namespace origo {
         ~RadioStation() { stop(); }
 
         // Добавление слушателя
-        void add_client(restinio::connection_id_t id, client_ptr_t client) {
+        void add_client(restinio::connection_id_t conn_id, client_ptr_t client) {
             std::lock_guard<std::mutex> lock(m_clients_mutex);
-            m_clients[id] = std::move(client);
+    
+            // Проверяем, не был ли уже удалён этот клиент
+            if (m_pending_removals.find(conn_id) != m_pending_removals.end()) {
+                m_pending_removals.erase(conn_id);
+                return; // Клиент уже отключился
+            }
+            
+            m_clients[conn_id] = std::move(client);
             std::cout << "[Radio] Client added. Total current: " << m_clients.size() << std::endl;
         }
 
-        void remove_client(restinio::connection_id_t id) {
+        void remove_client(restinio::connection_id_t conn_id) {
             std::lock_guard<std::mutex> lock(m_clients_mutex);
-            if (m_clients.erase(id) > 0) {
-                std::cout << "[Radio] Client disconnected. Total remaining: " << m_clients.size() << std::endl;
+            auto it = m_clients.find(conn_id);
+            if (it != m_clients.end()) {
+                try {
+                    // Отправляем последний пустой чанк для корректного завершения
+                    it->second->append_chunk(restinio::string_view_t{});
+                    it->second->flush();
+                    it->second->done();  // Явно закрываем соединение
+                } catch (...) {
+                    // Игнорируем ошибки при закрытии
+                }
+                m_clients.erase(it);
+                std::cout << "[Radio] Client removed. Total current: " << m_clients.size() << std::endl;
+            } else {
+                // Возможно, клиент ещё не добавлен
+                m_pending_removals.insert(conn_id);
             }
         }
 
@@ -177,6 +198,7 @@ namespace origo {
         
         client_map_t m_clients; 
         std::mutex m_clients_mutex;
+        std::set<restinio::connection_id_t> m_pending_removals;  // Для отложенного удаления
 
         // Новые примитивы для синхронизации прерываний
         std::condition_variable m_cv;
