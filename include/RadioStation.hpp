@@ -21,7 +21,6 @@ namespace origo {
         using client_ptr_t = std::shared_ptr<response_t>;
         using client_map_t = std::map<restinio::connection_id_t, client_ptr_t>;
 
-        // Конструктор теперь принимает размер истории как параметр (по умолчанию 5)
         RadioStation(std::filesystem::path music_dir, size_t history_size = 5) 
             : m_music_dir(std::move(music_dir)), m_history_size(history_size), m_running(false) {
             
@@ -80,16 +79,13 @@ namespace origo {
             return !m_cv.wait_for(lock, duration, [this] { return !m_running.load(); });
         }
 
-        // НОВИНКА: Основной цикл вещания теперь запрашивает следующий трек
         void broadcast_loop() {
-            const size_t chunk_size = 2400; // Оптимальный размер чанка для MP3 фреймов
+            const size_t chunk_size = 2400;
             std::vector<char> buffer(chunk_size);
 
             while (m_running) {
-                // Получаем следующий трек с учетом истории воспроизведения
                 auto next_track_opt = get_next_track();
                 if (!next_track_opt) {
-                    // Если плейлист пуст, ждем и пробуем снова
                     if (!interruptible_sleep(std::chrono::seconds(2))) break;
                     continue;
                 }
@@ -159,16 +155,18 @@ namespace origo {
             }
         }
 
-        // УЛУЧШЕНИЕ: Копируем клиентов перед отправкой, чтобы не блокировать мьютекс долго
         void send_chunk_to_all(const char* data, size_t size) {
-            client_map_t local_copy;
+            std::vector<client_ptr_t> local_copy;
             {
                 std::lock_guard<std::mutex> lock(m_clients_mutex);
                 if(m_clients.empty()) return;
-                local_copy = m_clients;
+                local_copy.reserve(m_clients.size());
+                for (const auto& [id, client] : m_clients) {
+                    local_copy.push_back(client);
+                }
             }
 
-            for (const auto& [id, client] : local_copy) {
+            for (const auto& client : local_copy) {
                 try {
                     client->append_chunk(restinio::string_view_t{data, size});
                     client->flush();
@@ -176,7 +174,6 @@ namespace origo {
             }
         }
 
-        // НОВИНКА: Загрузка полного плейлиста из директории
         void load_playlist() {
             for (const auto& entry : std::filesystem::directory_iterator(m_music_dir)) {
                 if (entry.is_regular_file() && entry.path().extension() == ".mp3") {
@@ -190,7 +187,6 @@ namespace origo {
             }
         }
 
-        // НОВИНКА: Логика выбора следующего трека с учетом истории
         std::optional<std::filesystem::path> get_next_track() {
             if (m_full_playlist.empty()) {
                 return std::nullopt;
